@@ -183,8 +183,16 @@ class ChatEngine:
         if winning.score == 0:
             return self._fallback_response(user_input)
 
-        raw_confidence = winning.score / self._max_possible_score
-        confidence = min(raw_confidence, 1.0)
+        # Normalize against the best possible score for exactly N matched keywords,
+        # where N = number of keywords that actually fired. This avoids penalising
+        # a query for keywords it had no reason to mention.
+        n = len(winning.matched_keywords)
+        sorted_kw_scores = sorted(
+            [len(kw) * winning.intent.priority for kw in winning.intent.keywords],
+            reverse=True,
+        )
+        best_n = sum(sorted_kw_scores[:n]) if n > 0 else 1
+        confidence = min(winning.score / best_n, 1.0)
         escalate = confidence < ESCALATION_THRESHOLD
 
         text = self._select_response(winning.intent)

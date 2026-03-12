@@ -251,7 +251,13 @@
       if (!results.length) return this._fallback(norm);
 
       const top = results[0];
-      const confidence = Math.min(top.score / this.maxScore, 1.0);
+      // Normalize against best possible score for exactly N matched keywords.
+      const n = top.matched.length;
+      const sortedKwScores = top.intent.keywords
+        .map(kw => kw.length * top.intent.priority)
+        .sort((a, b) => b - a);
+      const bestN = sortedKwScores.slice(0, n).reduce((s, v) => s + v, 0) || 1;
+      const confidence = Math.min(top.score / bestN, 1.0);
       const escalate = confidence < this.ESCALATION_THRESHOLD;
       let text = this._pick(top.intent.responses);
       if (escalate) text += "\n\n---\nStill stuck? Post in #lab-support on the IBM SkillsBuild Slack. Search existing threads first.";
