@@ -1,7 +1,7 @@
 [project]
 name = "ibm-skillsbuild-assistant"
 version = "0.1.0"
-description = "IBM SkillsBuild chatbot with intent-based response engine"
+description = "IBM SkillsBuild Assistant — modular intent-matching chatbot"
 requires-python = ">=3.11"
 dependencies = []
 
