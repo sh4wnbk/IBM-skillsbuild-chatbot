@@ -411,6 +411,15 @@
   const chatWindow = document.getElementById('chat-window');
   const inputEl    = document.getElementById('user-input');
 
+  const INTENT_BADGE = {
+    access:        'bg-ibm-blue-10 text-ibm-blue  border border-ibm-blue-20',
+    watsonx:       'bg-ibm-blue-10 text-ibm-blue  border border-ibm-blue-20',
+    certification: 'bg-ibm-blue-10 text-ibm-blue  border border-ibm-blue-20',
+    curriculum:    'bg-ibm-blue-10 text-ibm-blue  border border-ibm-blue-20',
+    community:     'bg-ibm-blue-10 text-ibm-blue  border border-ibm-blue-20',
+    frustration:   'bg-orange-50   text-orange-700 border border-orange-200',
+    fallback:      'bg-ibm-gray10  text-ibm-gray60 border border-ibm-gray20',
+  };
 
   function now() {
     return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -487,6 +496,7 @@
 
   /* ── Bot reply bubble ── */
   function appendBot(result) {
+    const badge  = INTENT_BADGE[result.intentName] || INTENT_BADGE.fallback;
     const pct    = Math.round(result.confidence * 100);
     const isInfo = result.intentName !== 'fallback' && result.intentName !== 'frustration';
 
@@ -525,7 +535,8 @@
           ${confBar}
           ${escalateBanner}
         </div>
-        <div class="flex items-center gap-2 pl-1">
+        <div class="flex items-center gap-2 pl-1 flex-wrap">
+          <span class="text-[11px] font-mono rounded-full px-2.5 py-0.5 ${badge}">${result.intentName}</span>
           <span class="text-xs text-ibm-gray40">${now()}</span>
         </div>
       </div>`;
