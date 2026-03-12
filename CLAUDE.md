@@ -18,3 +18,9 @@
 ## 4. Commands
 - Test: uv run pytest
 - Run: uv run python main.py
+
+## 5. Web Interface (GitHub Pages)
+- Standard: Single-file `index.html` in the root for easy GitHub Pages deployment.
+- Styling: Tailwind CSS (via CDN) for a professional IBM-themed UI.
+- Logic: Port the Python scoring algorithm (`keyword_length * priority`) exactly to JavaScript.
+- Icons: Use Lucide icons for UI elements.

@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<!-- AI Usage Statement:
+     This file was designed with the assistance of Claude (Anthropic).
+     The JavaScript ChatEngine class is an exact port of src/engine.py.
+     Weighted scoring: keyword.length * intent.priority (mirrors Python).
+     All logic and markup were reviewed and validated by the author. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IBM SkillsBuild Lab Assistant</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+  <!-- IBM Plex Sans font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ibm: {
+              blue:          '#0F62FE',
+              'blue-hover':  '#0353E9',
+              'blue-dark':   '#001141',
+              'blue-10':     '#EDF5FF',
+              'blue-20':     '#D0E2FF',
+              slate:         '#21272A',
+              'slate-light': '#343A3F',
+              gray10:        '#F4F4F4',
+              gray20:        '#E0E0E0',
+              gray40:        '#A8A8A8',
+              gray60:        '#6F6F6F',
+              gray90:        '#262626',
+              gray100:       '#161616',
+              yellow:        '#F1C21B',
+              'yellow-10':   '#FCF4D6',
+              red:           '#DA1E28',
+              green:         '#24A148',
+            },
+          },
+          fontFamily: {
+            sans: ['"IBM Plex Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html, body { height: 100%; overflow: hidden; }
+
+    /* Custom scrollbar */
+    #chat-window::-webkit-scrollbar { width: 4px; }
+    #chat-window::-webkit-scrollbar-track { background: transparent; }
+    #chat-window::-webkit-scrollbar-thumb { background: #C6C6C6; border-radius: 2px; }
+
+    /* Message entrance */
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .msg-enter { animation: slideUp 0.18s ease-out forwards; }
+
+    /* Typing indicator */
+    @keyframes blink {
+      0%, 80%, 100% { opacity: 0.15; }
+      40%            { opacity: 1; }
+    }
+    .dot {
+      display: inline-block; width: 7px; height: 7px;
+      border-radius: 50%; background: #6F6F6F;
+      margin: 0 2px; animation: blink 1.2s infinite;
+    }
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+
+    /* Focus ring override for inputs */
+    #user-input:focus { outline: none; box-shadow: none; }
+  </style>
+</head>
+
+<body class="bg-ibm-gray10 font-sans text-ibm-gray100 flex flex-col h-full">
+
+  <!-- ╔══════════════════════════════════════════════════╗
+       ║  HEADER                                          ║
+       ╚══════════════════════════════════════════════════╝ -->
+  <header class="bg-ibm-blue-dark text-white flex-shrink-0">
+    <div class="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
+
+      <!-- Left: Brand -->
+      <div class="flex items-center gap-3">
+        <!-- IBM stripe logo mark -->
+        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="IBM logo">
+          <rect x="0"  y="0"  width="24" height="3.2" fill="white"/>
+          <rect x="0"  y="5"  width="24" height="3.2" fill="white"/>
+          <rect x="3"  y="10" width="18" height="3.2" fill="white"/>
+          <rect x="3"  y="15" width="18" height="3.2" fill="white"/>
+          <rect x="0"  y="20" width="24" height="3.2" fill="white"/>
+        </svg>
+        <div class="border-l border-white/20 pl-3">
+          <p class="text-[10px] font-light tracking-[0.18em] uppercase text-white/60 leading-none mb-0.5">SkillsBuild</p>
+          <p class="text-sm font-semibold leading-none">Lab Assistant</p>
+        </div>
+      </div>
+
+      <!-- Right: Status + Reset -->
+      <div class="flex items-center gap-3">
+        <!-- Status pill -->
+        <div class="hidden sm:flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1.5 text-xs font-medium">
+          <span class="w-2 h-2 rounded-full bg-ibm-green animate-pulse"></span>
+          <span>Online</span>
+        </div>
+        <!-- Reset Chat button -->
+        <button onclick="resetChat()" title="Reset chat"
+          class="flex items-center gap-1.5 text-white/70 hover:text-white hover:bg-white/10 rounded px-2 py-1.5 text-xs font-medium transition-colors min-h-[44px] sm:min-h-0">
+          <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+          <span class="hidden sm:inline">Reset</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ╔══════════════════════════════════════════════════╗
+       ║  QUICK-START CHIPS                               ║
+       ╚══════════════════════════════════════════════════╝ -->
+  <div class="bg-ibm-blue border-b border-ibm-blue-hover flex-shrink-0">
+    <div class="max-w-3xl mx-auto px-4 py-2 flex items-center gap-2 overflow-x-auto">
+      <span class="text-white/50 text-xs self-center whitespace-nowrap mr-1 flex-shrink-0">Quick start:</span>
+
+      <!-- Three required chips -->
+      <button onclick="sendQuick('I am getting a 403 forbidden error on watsonx.ai')"
+        class="flex-shrink-0 flex items-center gap-1.5 bg-white/10 hover:bg-white/25 active:bg-white/30 text-white text-xs font-medium px-3 py-2 rounded-full whitespace-nowrap transition-colors min-h-[36px]">
+        <i data-lucide="zap" class="w-3 h-3"></i> watsonx error
+      </button>
+      <button onclick="sendQuick('I forgot my password and cannot log in to SkillsBuild')"
+        class="flex-shrink-0 flex items-center gap-1.5 bg-white/10 hover:bg-white/25 active:bg-white/30 text-white text-xs font-medium px-3 py-2 rounded-full whitespace-nowrap transition-colors min-h-[36px]">
+        <i data-lucide="key-round" class="w-3 h-3"></i> Login help
+      </button>
+      <button onclick="sendQuick('How do I get my Credly badge after completing the course?')"
+        class="flex-shrink-0 flex items-center gap-1.5 bg-white/10 hover:bg-white/25 active:bg-white/30 text-white text-xs font-medium px-3 py-2 rounded-full whitespace-nowrap transition-colors min-h-[36px]">
+        <i data-lucide="award" class="w-3 h-3"></i> My Badge
+      </button>
+
+      <!-- Separator -->
+      <span class="text-white/20 flex-shrink-0">|</span>
+
+      <!-- Additional chips -->
+      <button onclick="sendQuick('What modules are in this course?')"
+        class="flex-shrink-0 bg-white/10 hover:bg-white/25 active:bg-white/30 text-white text-xs font-medium px-3 py-2 rounded-full whitespace-nowrap transition-colors min-h-[36px]">
+        Curriculum
+      </button>
+      <button onclick="sendQuick('How do I use the lab-support Slack channel?')"
+        class="flex-shrink-0 bg-white/10 hover:bg-white/25 active:bg-white/30 text-white text-xs font-medium px-3 py-2 rounded-full whitespace-nowrap transition-colors min-h-[36px]">
+        #lab-support
+      </button>
+    </div>
+  </div>
+
+  <!-- ╔══════════════════════════════════════════════════╗
+       ║  CHAT WINDOW                                     ║
+       ╚══════════════════════════════════════════════════╝ -->
+  <main class="flex-1 overflow-hidden flex flex-col max-w-3xl w-full mx-auto px-3 sm:px-4 py-4 gap-3 min-h-0">
+
+    <div id="chat-window" class="flex-1 overflow-y-auto flex flex-col gap-4 pb-1 scroll-smooth">
+      <!-- Welcome message injected by JS -->
+    </div>
+
+    <!-- ── INPUT BAR ─────────────────────────────────────────── -->
+    <div class="flex-shrink-0 bg-white border-2 border-ibm-gray20 focus-within:border-ibm-blue rounded-lg shadow-sm flex items-center gap-2 px-3 py-2 transition-colors">
+      <i data-lucide="message-circle" class="w-4 h-4 text-ibm-gray40 flex-shrink-0"></i>
+      <input id="user-input"
+             type="text"
+             placeholder="Ask about your SkillsBuild lab…"
+             maxlength="300"
+             autocomplete="off"
+             class="flex-1 text-sm text-ibm-gray100 placeholder-ibm-gray40 bg-transparent min-w-0 py-1"
+             onkeydown="handleKey(event)" />
+      <button id="send-btn"
+              onclick="handleSend()"
+              class="bg-ibm-blue hover:bg-ibm-blue-hover active:bg-ibm-blue text-white rounded px-4 py-2 flex items-center gap-1.5 text-sm font-medium transition-colors flex-shrink-0 min-h-[40px]">
+        <i data-lucide="send" class="w-4 h-4"></i>
+        <span class="hidden sm:inline">Send</span>
+      </button>
+    </div>
+
+    <p class="text-center text-xs text-ibm-gray60 flex-shrink-0">
+      Unresolved? Post in
+      <a href="https://ibm-skillsbuild-talk.slack.com" target="_blank" rel="noopener"
+         class="text-ibm-blue hover:underline font-medium">#lab-support</a>
+      — search before posting.
+    </p>
+
+  </main>
+
+
+  <!-- ╔══════════════════════════════════════════════════════════╗
+       ║  JAVASCRIPT — ChatEngine (exact port of src/engine.py)  ║
+       ╚══════════════════════════════════════════════════════════╝ -->
+  <script>
+  // ─────────────────────────────────────────────────────────────────────
+  // AI Usage Statement:
+  // ChatEngine is a direct JavaScript port of src/engine.py.
+  // Scoring: score += keyword.length * intent.priority  (per matched kw)
+  // Confidence: Math.min(rawScore / maxPossibleScore, 1.0)
+  // Escalation: confidence < ESCALATION_THRESHOLD (0.25)
+  // ─────────────────────────────────────────────────────────────────────
+
+  class ChatEngine {
+    constructor() {
+      this.intents = this._buildIntents();
+      this.maxScore = Math.max(
+        ...this.intents.map(i => i.keywords.reduce((s, kw) => s + kw.length * i.priority, 0))
+      );
+      this.ESCALATION_THRESHOLD = 0.25;
+      this.FRUSTRATION_SIGNALS = [
+        "frustrated","frustrating","annoyed","angry","hate","stupid","broken",
+        "terrible","awful","useless","doesnt work","doesn't work","not working",
+        "nothing works","give up","i cant","i can't","impossible","ridiculous","this is bad",
+      ];
+    }
+
+    /* Public API — mirrors ChatEngine.respond() */
+    respond(userInput) {
+      const trimmed = userInput.trim();
+      if (!trimmed) {
+        return this._makeResponse(
+          "It looks like you sent an empty message. Try asking about lab access, watsonx.ai, badges, the course curriculum, or the SkillsBuild community.",
+          "fallback", 0, [], true
+        );
+      }
+
+      const norm = this._normalize(trimmed);
+
+      if (this._detectFrustration(norm)) {
+        return this._makeResponse(
+          "I'm sorry you're having a tough time — that's completely understandable!\n\nFor hands-on technical issues, the fastest path to a human is the #lab-support channel on the IBM SkillsBuild Slack workspace. Please search existing threads before posting.",
+          "frustration", 0, [], true
+        );
+      }
+
+      const results = this._scoreInput(norm);
+      if (!results.length) return this._fallback(norm);
+
+      const top = results[0];
+      const confidence = Math.min(top.score / this.maxScore, 1.0);
+      const escalate = confidence < this.ESCALATION_THRESHOLD;
+      let text = this._pick(top.intent.responses);
+      if (escalate) text += "\n\n---\nStill stuck? Post in #lab-support on the IBM SkillsBuild Slack. Search existing threads first.";
+
+      return this._makeResponse(text, top.intent.name, confidence, top.matched, escalate);
+    }
+
+    /* Mirrors _normalize */
+    _normalize(text) {
+      return text.toLowerCase().trim()
+        .replace(/[^\w\s\-']/g, ' ')
+        .replace(/\s+/g, ' ').trim();
+    }
+
+    /* Mirrors _detect_frustration */
+    _detectFrustration(norm) {
+      return this.FRUSTRATION_SIGNALS.some(s => norm.includes(s));
+    }
+
+    /* Mirrors _score_input — keyword.length * intent.priority */
+    _scoreInput(norm) {
+      return this.intents.map(intent => {
+        let score = 0; const matched = [];
+        for (const kw of intent.keywords) {
+          if (norm.includes(kw)) { score += kw.length * intent.priority; matched.push(kw); }
+        }
+        return { intent, score, matched };
+      }).filter(r => r.score > 0).sort((a, b) => b.score - a.score);
+    }
+
+    _pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+    _makeResponse(text, intentName, confidence, matched, escalate) {
+      return { text, intentName, confidence, matched, escalate };
+    }
+
+    _fallback(norm) {
+      const alpha = norm.replace(/[^a-z]/g, '');
+      const text = alpha.length < 3
+        ? "I didn't quite catch that. I can help with: lab access, watsonx.ai, digital badges, the course catalog, or #lab-support Slack.\n\n---\nStill stuck? Post in #lab-support on the IBM SkillsBuild Slack."
+        : "I'm not sure about that topic yet. I specialise in IBM SkillsBuild topics: lab access, watsonx.ai troubleshooting, badges, curriculum, and the Slack community.\n\nCould you rephrase or pick one of those areas?\n\n---\nStill stuck? Post in #lab-support on the IBM SkillsBuild Slack.";
+      return this._makeResponse(text, "fallback", 0, [], true);
+    }
+
+    /* Mirrors _build_intents() */
+    _buildIntents() {
+      return [
+        // ── access (priority 2) — Lab Orientation ──────────────────────
+        { name: "access", priority: 2,
+          keywords: [
+            "login","log in","sign in","password","reset password","forgot password",
+            "account","locked out","locked account","two-factor","2fa","authentication",
+            "username","email verification","activate account","registration",
+            "cloud environment","managed environment","no install","no local install",
+            "install","python install","lab environment","lab access",
+            "unable to access","cannot access",
+          ],
+          responses: [
+            "IBM SkillsBuild labs run in a fully managed cloud environment — no local Python installation or software setup is required on your machine. Everything runs in the browser.\n\nIf you cannot access the lab, first try logging out and back in. For persistent login issues, visit the login page and use 'Forgot Password' to reset your credentials. Activation emails expire after 24 hours — check your spam folder.",
+            "Your SkillsBuild lab environment is cloud-hosted, so you do not need to install Python, Jupyter, or any other software locally.\n\nFor account or access problems: clear your browser cache, disable VPN if active, and ensure cookies are enabled. If 2FA is failing, re-sync your authenticator app clock.",
+          ],
+        },
+        // ── watsonx (priority 3) — watsonx.ai doc ──────────────────────
+        { name: "watsonx", priority: 3,
+          keywords: [
+            "watsonx","watsonx.ai","403","403 forbidden","forbidden error","capacity",
+            "capacity limit","server capacity","project token","api token","token expired",
+            "token invalid","rate limit","quota","inference error","model inference",
+            "prompt lab","foundation model","granite","generative ai","gen ai",
+            "large language model","llm","prompt engineering",
+            "natural language processing","nlp","watson",
+          ],
+          responses: [
+            "Common watsonx.ai issues and fixes:\n\n• 403 Forbidden error: Your project API token has expired or lacks the correct IAM role. Regenerate your token in the IBM Cloud IAM console and update the project settings in watsonx.ai.\n\n• Capacity limit reached: IBM Watson servers are at peak load. Wait a few minutes and retry.\n\n• Project token issues: Ensure your token is scoped to the correct project ID. A mismatch causes silent auth failures.",
+            "If you see a 403 Forbidden on watsonx.ai:\n1. Open IBM Cloud → Manage → Access (IAM) → API keys.\n2. Create a new API key or regenerate the existing one.\n3. In watsonx.ai → Project → Manage → Access Control, update the token.\n\nIf the error persists, the project may have hit its capacity quota. Wait 5–10 minutes and retry.",
+            "watsonx.ai Prompt Lab tips:\n\n• If a foundation model (e.g. Granite) returns a timeout, reduce your max token count and retry.\n• Capacity errors are temporary — peak demand can cause delays of 2–5 minutes.\n• Always validate your project token scope before starting a lab session.",
+          ],
+        },
+        // ── certification (priority 2) — Badges/Certs doc ──────────────
+        { name: "certification", priority: 2,
+          keywords: [
+            "badge","digital badge","certificate","certification","credential","credly",
+            "acclaim","earn badge","80 percent","80%","passing score","passing grade",
+            "final score","final assessment","assessment score","48 hours","48h",
+            "badge delay","completed course","course completion","linkedin","share badge",
+            "verify certificate","proof of completion","transcript","exam","quiz",
+          ],
+          responses: [
+            "IBM SkillsBuild badges and certificates:\n\n• Badges are issued through Credly within 48 hours of course completion — check your email (including spam) for an invitation.\n\n• You must achieve 80% or higher on the final assessment to earn a badge. The threshold is fixed and cannot be waived.\n\n• Once claimed on Credly, share your badge directly to LinkedIn with a single click.",
+            "Haven't received your badge?\n\n1. Confirm you scored 80%+ on the final assessment.\n2. Check your spam folder for a Credly invitation.\n3. If it has been more than 48 hours, contact SkillsBuild support with a screenshot of your completion page.",
+          ],
+        },
+        // ── curriculum (priority 1) — Curriculum Overview ───────────────
+        { name: "curriculum", priority: 1,
+          keywords: [
+            "curriculum","course structure","module","modules","progression","learning path",
+            "course outline","syllabus","what topics","course content","course overview",
+            "lesson","lessons","unit","units","what do i learn","what will i learn",
+            "prerequisites","beginner","advanced","intermediate",
+          ],
+          responses: [
+            "IBM SkillsBuild courses are structured in sequential modules. Each module builds on the previous one.\n\nCourses typically include:\n• Concept lessons (videos + readings)\n• Hands-on labs in the managed cloud environment\n• Knowledge checks and a graded final assessment (80%+ to pass)\n\nCheck the course overview page for a full module list and prerequisites.",
+            "The SkillsBuild curriculum is organised into progressive learning paths. Beginner paths require no prior experience; intermediate and advanced paths list prerequisites on their overview pages.",
+          ],
+        },
+        // ── community (priority 2) — Community/Slack doc ────────────────
+        { name: "community", priority: 2,
+          keywords: [
+            "slack","lab-support","#lab-support","community","help channel","support channel",
+            "post question","ask question","search first","community rules","community guidelines",
+            "where to ask","where do i ask","who to contact","technical support",
+            "human support","live support","contact support",
+          ],
+          responses: [
+            "For technical issues during SkillsBuild labs:\n\n1. Join the IBM SkillsBuild Slack workspace (link on your course page).\n2. Search the #lab-support channel — most common problems have already been answered.\n3. If unresolved, post with: course name, exact error message, and steps you already tried.\n\nCommunity rule: Search before posting.",
+            "The IBM SkillsBuild community uses Slack for peer and instructor support. Primary channel: #lab-support.\n\nWhen posting, include:\n• Course and module name\n• Exact error message or screenshot\n• Steps you have already tried",
+          ],
+        },
+      ];
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Console test simulation (runs on load — verifiable in DevTools)
+  // ─────────────────────────────────────────────────────────────────────
+  (function runConsoleTests() {
+    const engine = new ChatEngine();
+    const cases = [
+      { input: "I am getting a 403 forbidden error on watsonx.ai", expect: "watsonx" },
+      { input: "I forgot my password",                              expect: "access"  },
+      { input: "How do I get my Credly badge?",                    expect: "certification" },
+      { input: "What modules does this course have?",              expect: "curriculum" },
+      { input: "How do I use the lab-support channel?",            expect: "community" },
+      { input: "This is so frustrating",                           expect: "frustration" },
+      { input: "",                                                  expect: "fallback" },
+      { input: "xkjqwzpvmb",                                       expect: "fallback" },
+    ];
+    console.group("🤖 ChatEngine — console test simulation");
+    let passed = 0;
+    cases.forEach(({ input, expect }) => {
+      const r = engine.respond(input);
+      const ok = r.intentName === expect;
+      if (ok) passed++;
+      console.log(
+        `%c${ok ? "✅ PASS" : "❌ FAIL"}%c  intent=${r.intentName} conf=${(r.confidence*100).toFixed(0)}%  input="${input}"`,
+        ok ? "color:green;font-weight:bold" : "color:red;font-weight:bold", "color:inherit"
+      );
+    });
+    console.log(`\n${passed}/${cases.length} tests passed`);
+    console.groupEnd();
+  })();
+
+  // ─────────────────────────────────────────────────────────────────────
+  // UI
+  // ─────────────────────────────────────────────────────────────────────
+  const engine     = new ChatEngine();
+  const chatWindow = document.getElementById('chat-window');
+  const inputEl    = document.getElementById('user-input');
+
+  const INTENT_BADGE = {
+    access:        'bg-ibm-blue-10 text-ibm-blue  border border-ibm-blue-20',
+    watsonx:       'bg-ibm-blue-10 text-ibm-blue  border border-ibm-blue-20',
+    certification: 'bg-ibm-blue-10 text-ibm-blue  border border-ibm-blue-20',
+    curriculum:    'bg-ibm-blue-10 text-ibm-blue  border border-ibm-blue-20',
+    community:     'bg-ibm-blue-10 text-ibm-blue  border border-ibm-blue-20',
+    frustration:   'bg-orange-50   text-orange-700 border border-orange-200',
+    fallback:      'bg-ibm-gray10  text-ibm-gray60 border border-ibm-gray20',
+  };
+
+  function now() {
+    return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  function esc(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+            .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+  function scrollBottom() {
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+  }
+
+  /* ── Welcome message ── */
+  function appendWelcome() {
+    const el = document.createElement('div');
+    el.className = 'flex items-start gap-3 msg-enter';
+    el.innerHTML = `
+      <div class="w-9 h-9 rounded-full bg-ibm-blue flex items-center justify-center flex-shrink-0 mt-0.5 shadow">
+        <i data-lucide="bot" class="w-4 h-4 text-white"></i>
+      </div>
+      <div class="flex flex-col gap-1 max-w-[85%]">
+        <div class="bg-white border border-ibm-gray20 rounded-2xl rounded-tl-none px-4 py-3 shadow-sm">
+          <p class="text-xs font-semibold text-ibm-blue mb-1 tracking-wide uppercase">IBM SkillsBuild Lab Assistant</p>
+          <p class="text-sm text-ibm-gray90 leading-relaxed">
+            Hello! I'm here to support your IBM SkillsBuild lab experience.<br/>
+            I can assist with <strong>lab access</strong>, <strong>watsonx.ai</strong> errors,
+            <strong>badges &amp; certificates</strong>, <strong>curriculum</strong>, and
+            the <strong>#lab-support</strong> Slack community.
+          </p>
+          <p class="text-sm text-ibm-gray60 mt-2">What can I help you with today?</p>
+        </div>
+        <span class="text-xs text-ibm-gray40 pl-1">${now()}</span>
+      </div>`;
+    chatWindow.appendChild(el);
+    lucide.createIcons();
+  }
+
+  /* ── User bubble ── */
+  function appendUser(text) {
+    const el = document.createElement('div');
+    el.className = 'flex items-end justify-end gap-3 msg-enter';
+    el.innerHTML = `
+      <div class="flex flex-col items-end gap-1 max-w-[85%]">
+        <div class="bg-ibm-blue text-white rounded-2xl rounded-br-none px-4 py-3 shadow-sm">
+          <p class="text-sm leading-relaxed whitespace-pre-wrap break-words">${esc(text)}</p>
+        </div>
+        <span class="text-xs text-ibm-gray40 pr-1">${now()}</span>
+      </div>
+      <div class="w-9 h-9 rounded-full bg-ibm-gray20 flex items-center justify-center flex-shrink-0 mb-5 shadow-sm">
+        <i data-lucide="user" class="w-4 h-4 text-ibm-gray60"></i>
+      </div>`;
+    chatWindow.appendChild(el);
+    lucide.createIcons();
+    scrollBottom();
+  }
+
+  /* ── Typing indicator ── */
+  function appendTyping() {
+    const el = document.createElement('div');
+    el.id = 'typing-indicator';
+    el.className = 'flex items-start gap-3 msg-enter';
+    el.innerHTML = `
+      <div class="w-9 h-9 rounded-full bg-ibm-blue flex items-center justify-center flex-shrink-0 mt-0.5 shadow">
+        <i data-lucide="bot" class="w-4 h-4 text-white"></i>
+      </div>
+      <div class="bg-white border border-ibm-gray20 rounded-2xl rounded-tl-none px-4 py-3 shadow-sm">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      </div>`;
+    chatWindow.appendChild(el);
+    lucide.createIcons();
+    scrollBottom();
+    return el;
+  }
+
+  /* ── Bot reply bubble ── */
+  function appendBot(result) {
+    const badge  = INTENT_BADGE[result.intentName] || INTENT_BADGE.fallback;
+    const pct    = Math.round(result.confidence * 100);
+    const isInfo = result.intentName !== 'fallback' && result.intentName !== 'frustration';
+
+    const confBar = isInfo ? `
+      <div class="mt-3 pt-3 border-t border-ibm-gray20">
+        <div class="flex justify-between text-xs text-ibm-gray60 mb-1">
+          <span class="font-medium">Confidence</span>
+          <span class="font-mono">${pct}%</span>
+        </div>
+        <div class="h-1.5 bg-ibm-gray20 rounded-full overflow-hidden">
+          <div class="h-full rounded-full transition-all duration-700 ease-out ${
+            pct >= 50 ? 'bg-ibm-blue' : pct >= 25 ? 'bg-ibm-yellow' : 'bg-ibm-red'
+          }" style="width:${pct}%"></div>
+        </div>
+      </div>` : '';
+
+    const escalateBanner = result.escalate ? `
+      <div class="mt-3 flex items-start gap-2 bg-ibm-yellow-10 border border-ibm-yellow rounded-lg px-3 py-2.5">
+        <i data-lucide="triangle-alert" class="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5"></i>
+        <p class="text-xs text-yellow-800 leading-snug">
+          Low confidence — consider posting in
+          <strong class="font-semibold">#lab-support</strong>
+          on the IBM SkillsBuild Slack for faster, human-verified help.
+        </p>
+      </div>` : '';
+
+    const el = document.createElement('div');
+    el.className = 'flex items-start gap-3 msg-enter';
+    el.innerHTML = `
+      <div class="w-9 h-9 rounded-full bg-ibm-blue flex items-center justify-center flex-shrink-0 mt-0.5 shadow">
+        <i data-lucide="bot" class="w-4 h-4 text-white"></i>
+      </div>
+      <div class="flex flex-col gap-1.5 max-w-[85%] min-w-0">
+        <div class="bg-white border border-ibm-gray20 rounded-2xl rounded-tl-none px-4 py-3 shadow-sm">
+          <p class="text-sm text-ibm-gray90 leading-relaxed whitespace-pre-wrap break-words">${esc(result.text)}</p>
+          ${confBar}
+          ${escalateBanner}
+        </div>
+        <div class="flex items-center gap-2 pl-1 flex-wrap">
+          <span class="text-[11px] font-mono rounded-full px-2.5 py-0.5 ${badge}">${result.intentName}</span>
+          <span class="text-xs text-ibm-gray40">${now()}</span>
+        </div>
+      </div>`;
+    chatWindow.appendChild(el);
+    lucide.createIcons();
+    scrollBottom();
+  }
+
+  /* ── Event handlers ── */
+  function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+  }
+
+  function handleSend() {
+    const text = inputEl.value.trim();
+    if (!text) return;
+    inputEl.value = '';
+    appendUser(text);
+    const typing = appendTyping();
+    setTimeout(() => {
+      chatWindow.removeChild(typing);
+      appendBot(engine.respond(text));
+    }, 500);
+  }
+
+  function sendQuick(text) {
+    inputEl.value = text;
+    handleSend();
+  }
+
+  function resetChat() {
+    chatWindow.innerHTML = '';
+    appendWelcome();
+    inputEl.focus();
+  }
+
+  /* ── Init ── */
+  document.addEventListener('DOMContentLoaded', () => {
+    lucide.createIcons();
+    appendWelcome();
+    inputEl.focus();
+  });
+  </script>
+
+</body>
+</html>
